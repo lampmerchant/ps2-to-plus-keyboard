@@ -52,6 +52,20 @@ Keys marked as being user programmable in the table above can have their functio
 Programmable key functions consist of a sequence of events and may consume up to 16 bytes each.  Note that a key press and a key release are two separate events.  Most events consume one byte each, but keypad keys (including the arrow keys) require an extra byte and may also require the firmware to modify the state of the shift key, which consumes an extra two bytes.
 
 
+### Pinout
+
+```
+Connector (from top):          PIC:
+ ____                                          .--------.
+||||||  1  Black   Ground              Supply -|01 \/ 08|- Ground
+|1234|  2  Red     Clock        Data <--> RA5 -|02    07|- RA0 <--- PS/2 Data
+|----|  3  Green   Data        Clock <--- RA4 -|03    06|- RA1 <--- PS/2 Clock
+|____|  4  Yellow  +5VDC       !MCLR ---> RA3 -|04    05|- RA2 <---
+ |  |                                          '--------'
+ :  :
+```
+
+
 ### Building Firmware
 
 Building the firmware requires Microchip MPASM, which is included with their development environment, MPLAB. Note that you must use MPLAB X version 5.35 or earlier or MPLAB 8 as later versions of MPLAB X have removed MPASM.
