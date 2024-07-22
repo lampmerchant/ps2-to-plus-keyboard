@@ -67,8 +67,8 @@ SKOPT	equ	0x75	;Serial keyboard option key code
 SKCAPS	equ	0x73	;Serial keyboard caps lock key code
 
 ;Pin Assignments:
+PKD_PIN	equ	RA0	;Pin where PS/2 keyboard data is connected
 PKC_PIN	equ	RA1	;Pin where PS/2 keyboard clock is connected
-LED_PIN	equ	RA2	;Pin where LED is connected
 SKC_PIN	equ	RA4	;Pin where serial keyboard clock is connected
 SKD_PIN	equ	RA5	;Pin where serial keyboard data is connected
 
@@ -201,7 +201,7 @@ Init
 
 ;;; Mainline ;;;
 
-Ps2Init
+Ps2Reset
 	movlw	~((1 << PSKBDF0)|(1 << PSKBDE0)|(1 << PSKBDE1)|(1 << PSKIGNX))
 	andwf	FLAGS,F		;Reset flags relevant to PS/2 keyboard
 	;fall through
@@ -212,8 +212,11 @@ Main
 	bra	Main		; "
 	movf	WREG,W		;If the PS/2 receiver timed out, reset the flags
 	btfsc	STATUS,Z	; "
-	bra	Ps2Init		; "
-	xorlw	0x83		;If the received byte was 0x83 (F7), act like it
+	bra	Ps2Reset	; "
+	xorlw	0xAA		;If the received byte was 0xAA, send a byte to
+	btfsc	STATUS,Z	; the keyboard because some stupid ones require
+	goto	Ps2Init		; this
+	xorlw	0x83 ^ 0xAA	;If the received byte was 0x83 (F7), act like it
 	btfsc	STATUS,Z	; was 0x7F so we can halve the size of the LUT
 	movlw	0x7F ^ 0x83	; "
 	xorlw	0xF0 ^ 0x83	;If the received byte was 0xF0, set that flag
@@ -232,7 +235,7 @@ Main
 	iorlw	B'10000000'	; before doing the lookup
 	bcf	FLAGS,PSKBDE0	; "
 	btfsc	FLAGS,PSKIGNX	;If we were flagged to ignore the next event,
-	bra	Ps2Init		; reset flags instead of continuing
+	bra	Ps2Reset	; reset flags instead of continuing
 	btfsc	FLAGS,PSKBDE1	;If the 0xE1 flag was set, change lookup index
 	movlw	0xFF		; to 0xFF for Pause key and raise the flag to
 	btfsc	FLAGS,PSKBDE1	; ignore the Num Lock press that will inevitably
@@ -673,6 +676,36 @@ IntPs2Timeout
 	incf	PK_QPSH,F	;Advance the queue push pointer
 	bcf	PK_QPSH,4	; "
 	retfie			;Return
+
+
+;;; PS/2 Init Subprogram ;;;
+
+Ps2Init
+	movlb	1		;Pull the clock line low for 100 us
+	bcf	TRISA,PKC_PIN	; "
+	DELAY	133		; "
+	bcf	TRISA,PKD_PIN	;Pull the data line low to signal we want to
+	bsf	TRISA,PKC_PIN	; send a byte, release the clock line
+	movlw	0xF6		;Set up 0xF6 (set defaults) to be sent
+	bsf	STATUS,C	;Rotate a 1 into W and rotate out the first bit
+	rrf	WREG,W		; to be sent
+Ps2Ini0	call	Ps2Ini1		;Set up this bit to be sent
+	lsrf	WREG,W		;Rotate the next bit into carry
+	btfss	STATUS,Z	;If it wasn't the last bit of the byte, loop
+	bra	Ps2Ini0		; "
+	call	Ps2Ini1		;Set up a 1 (odd) parity bit to be sent
+	call	Ps2Ini1		;Set up a 1 (stop) bit to be sent
+	goto	Ps2Reset	;Return without waiting for ack sequence
+Ps2Ini1	movlb	0		;Wait for the clock line to be released
+	btfss	PORTA,PKC_PIN	; "
+	bra	$-1		; "
+	btfsc	PORTA,PKC_PIN	;Wait for the device to pull the clock line low
+	bra	$-1		; "
+	movlb	1		;Copy state of carry into data line
+	bcf	TRISA,PKD_PIN	; "
+	btfsc	STATUS,C	; "
+	bsf	TRISA,PKD_PIN	; "
+	return			;Done with setting up this bit
 
 
 ;;; Lookup Tables ;;;
